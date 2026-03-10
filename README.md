@@ -103,7 +103,7 @@ bash infer_bash/video.sh
 
 ####  2. Image Inference
 
-2.1. Download the [evaluation datasets](https://share.phys.ethz.ch/~pf/bingkedata/marigold/evaluation_dataset/) (depth) by the following commands (referred to Marigold).
+2.1. Download the [evaluation datasets](https://share.phys.ethz.ch/~pf/bingkedata/marigold/evaluation_dataset/) (depth) by the following commands (referred to [Marigold](https://github.com/prs-eth/Marigold)).
 
 2.2.
 Reconfig the bash (**$IMAGE_BASE_DATA_DIR**) and run the image inference script
