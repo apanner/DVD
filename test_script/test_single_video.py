@@ -186,7 +186,7 @@ def generate_depth_sliced(model, input_rgb, window_size=45, overlap=9, scale_onl
             else:
                 scale, shift = compute_scale_and_shift(curr_frames, ref_frames)
 
-            scale = np.clip(scale, 0.8, 1.2)
+            scale = np.clip(scale, 0.7, 1.5)
 
             aligned_t = t * scale + shift
             aligned_t[aligned_t < 0] = 0
