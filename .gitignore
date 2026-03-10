@@ -18,3 +18,4 @@ ckpt/DVD/
 output/
 inference_results/
 *.mp4
+ckpt/DVD
