@@ -27,7 +27,6 @@ pip install sageattention
 mkdir ckpt
 cd ckpt 
 huggingface
-
 ```
 If you encounter issues during installation, it may be caused by the packages we depend on. Please refer to the documentation of the package that caused the problem.
 
