@@ -49,6 +49,8 @@ By cleanly stripping away generative stochasticity, DVD unites the semantic rich
 - **[2026.03.10]** 🔥 Repository initialized and training & inference code released.
 
 
+---
+
 ## 📂 Core Folders & Files Overview
 
 To help you navigate the codebase quickly, we have divided the core directories into two main categories based on what you want to do: **Inference** (just using the model) or **Training** (fine-tuning or training from scratch).
