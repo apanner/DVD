@@ -9,12 +9,13 @@ _**[Hongfei Zhang](https://x.com/hongfeizhang0xF)<sup>1*</sup>, [Harold H. Chen]
 <br><br>
 <sup>*</sup>Equal Contribution; <sup>†</sup>Corresponding Author
 <br>
-<sup>1</sup>HKUST(GZ), <sup>2</sup>HKUST, <sup>3</sup>UCSD, <sup>4</sup>Princeton University, <sup>5</sup>MBZUAI, <sup>6</sup>SZU, <sup>7</sup>Knowin, <sup>8</sup>UniTrento,
+<sup>1</sup>HKUST(GZ), <sup>2</sup>HKUST, <sup>3</sup>UCSD, <sup>4</sup>Princeton University, <sup>5</sup>MBZUAI, <sup>6</sup>SZU, <sup>7</sup>Knowin, <sup>8</sup>UniTrento
 
 <h5 align="center"> If you like our project, please give us a star ⭐ on GitHub for latest update.  </h2>
 
- <a href='#'><img src='https://img.shields.io/badge/arXiv-TBD-b31b1b.svg'></a>
  [![Project Page](https://img.shields.io/badge/DVD-Website-green?logo=googlechrome&logoColor=green)](https://dvd-project.github.io/)
+ [![Paper](https://img.shields.io/badge/arXiv-Paper-b31b1b?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2603.12250)
+ [![Model](https://img.shields.io/badge/🤗%20HuggingFace-Model%20-yellow)](https://huggingface.co/FayeHongfeiZhang/DVD/tree/main)
 <br>
 
 </div>
@@ -43,8 +44,13 @@ By cleanly stripping away generative stochasticity, DVD unites the semantic rich
 ---
 
 ## 📢 News
+- **[2026.03.13]** 📄 Paper is available on [arXiv](https://arxiv.org/abs/2603.12250).
+- **[2026.03.12]** 🌐 [Project page](https://dvd-project.github.io/) is live.
+- **[2026.03.11]** 🤗 Pre-trained weights released on [Hugging Face](https://huggingface.co/FayeHongfeiZhang/DVD/tree/main).
+- **[2026.03.10]** 🔥 Repository initialized and training & inference code released.
 
 
+---
 
 ## 📂 Core Folders & Files Overview
 
@@ -89,7 +95,7 @@ pip install sageattention # DO NOT USE THIS FOR TRAINING!!!
 ```
 ### 🤗 Download the checkpoint from Huggingface
 
-#### 1. Make dir and login to huggingface
+#### 1. Login to huggingface
 ```
 huggingface-cli login # Or hf auth login 
 ```
@@ -124,7 +130,7 @@ If you encounter issues during installation, it may be caused by the packages we
 
 ## 🕹️ Inference
 
-### 🤹🏼‍♂️ Quick Start With Pre-uploaded Demo Videos (Long Window Setting)
+### 🤹🏼‍♂️ Quick Start with Demo Videos
 
 ```
 bash infer_bash/openworld.sh
@@ -198,7 +204,7 @@ If you find our work useful in your research, please consider citing:
 @article{zhang2026dvd,
   title={DVD: Deterministic Video Depth Estimation with Generative Priors},
   author={Zhang, Hongfei and Chen, Harold Haodong and Liao, Chenfei and He, Jing and Zhang, Zixin and Li, Haodong and Liang, Yihao and Chen, Kanghao and Ren, Bin and Zheng, Xu and Yang, Shuai and Zhou, Kun and Li, Yinchuan and Sebe, Nicu and Chen, Ying-Cong},
-  journal={arXiv preprint},
+  journal={arXiv preprint arXiv:2603.12250},
   year={2026}
 }
 ```
