@@ -10,6 +10,9 @@ import re
 import sys
 from pathlib import Path
 
+# Reduce CUDA fragmentation (must be set before torch/CUDA init - helps OOM on 80GB)
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 # Add parent DVD root for imports
 current_dir = Path(__file__).parent
 dvd_root = current_dir.parent
@@ -76,9 +79,11 @@ def read_video(video_path):
     return video_tensor.unsqueeze(0), fps
 
 
-# UHD maximum dimensions (same as VDA engine)
+# Resolution limits (same as VDA engine)
 UHD_MAX_WIDTH = 4096
 UHD_MAX_HEIGHT = 2160
+TWO_K_MAX_WIDTH = 2048
+TWO_K_MAX_HEIGHT = 1080
 
 
 def align_to_16(val):
@@ -86,28 +91,37 @@ def align_to_16(val):
     return (val + 15) // 16 * 16
 
 
-def resize_frames_to_uhd_max(video_tensor):
+def resize_frames_to_uhd_max(video_tensor, max_resolution="UHD"):
     """
-    VDA-style smart resize: process at native resolution up to UHD max (4096x2160).
-    - If input > UHD: scale DOWN to fit (aspect ratio preserved)
-    - If input <= UHD: use as-is, align to 16 (pad if needed)
+    VDA-style smart resize: process at native resolution up to max_resolution.
+    - max_resolution "UHD": cap at 4096x2160
+    - max_resolution "2K": cap at 2048x1080 (for 80GB when UHD OOMs)
+    - If input > cap: scale DOWN to fit (aspect ratio preserved)
+    - If input <= cap: use as-is, align to 16 (pad if needed)
     Returns: (resized_tensor, orig_size, processed_size)
     """
     B, T, C, H, W = video_tensor.shape
     orig_size = (H, W)
-    
-    # Check if resize is needed (exceeds UHD)
-    needs_resize = W > UHD_MAX_WIDTH or H > UHD_MAX_HEIGHT
-    
+
+    if max_resolution and str(max_resolution).upper() == "2K":
+        max_W, max_H = TWO_K_MAX_WIDTH, TWO_K_MAX_HEIGHT
+        cap_name = "2K"
+    else:
+        max_W, max_H = UHD_MAX_WIDTH, UHD_MAX_HEIGHT
+        cap_name = "UHD"
+
+    # Check if resize is needed (exceeds cap)
+    needs_resize = W > max_W or H > max_H
+
     if needs_resize:
-        scale_w = UHD_MAX_WIDTH / W
-        scale_h = UHD_MAX_HEIGHT / H
+        scale_w = max_W / W
+        scale_h = max_H / H
         scale = min(scale_w, scale_h)
         new_W = int(round(W * scale))
         new_H = int(round(H * scale))
-        new_W = min(align_to_16(new_W), UHD_MAX_WIDTH)
-        new_H = min(align_to_16(new_H), UHD_MAX_HEIGHT)
-        print(f"[DVD RESIZE] Input {W}x{H} exceeds UHD -> scaling to {new_W}x{new_H}")
+        new_W = min(align_to_16(new_W), max_W)
+        new_H = min(align_to_16(new_H), max_H)
+        print(f"[DVD RESIZE] Input {W}x{H} exceeds {cap_name} -> scaling to {new_W}x{new_H}")
     else:
         # Within UHD: align to 16 (pad if needed for DVD pipeline)
         new_W = align_to_16(W)
@@ -175,36 +189,56 @@ def compute_scale_and_shift(curr_frames, ref_frames, mask=None):
     return scale, shift
 
 
-def generate_depth_sliced(model, input_rgb, window_size=81, overlap=21):
-    """Run DVD inference with sliding window."""
+def generate_depth_sliced(model, input_rgb, window_size=81, overlap=21, device="cuda"):
+    """Run DVD inference with sliding window. Keeps input on CPU, moves only window slice to GPU."""
     B, T, C, H, W = input_rgb.shape
+    # At UHD (4096x2160), aggressive window reduction for 80GB - DiT+VAE need ~70GB+
+    pixels = H * W
+    if pixels >= 4096 * 2160:  # UHD
+        window_size = min(window_size, 5)   # 5 = 4n+1 min for temporal, fits 80GB
+        overlap = min(overlap, 2)
+        print(f"[DVD] UHD: window {window_size} overlap {overlap} (80GB optimized)")
     depth_windows = get_window_index(T, window_size, overlap)
     depth_res_list = []
-    
+    # Use tiled VAE for high-res to reduce peak memory
+    use_tiled = pixels >= 1920 * 1080
+    tile_size = (30, 52) if use_tiled else None
+    tile_stride = (15, 26) if use_tiled else None
+
+    # Keep full input on CPU; move only current window to GPU (saves ~10GB for long UHD clips)
+    input_on_cpu = input_rgb.device.type == "cpu" if hasattr(input_rgb, "device") else True
+
     for start, end in tqdm(depth_windows, desc="DVD Inferencing"):
-        _input_rgb_slice = input_rgb[:, start:end]
+        _input_rgb_slice = input_rgb[:, start:end].clone() if input_on_cpu else input_rgb[:, start:end]
         _input_rgb_slice, origin_T = pad_time_mod4(_input_rgb_slice)
+        if input_on_cpu and device:
+            _input_rgb_slice = _input_rgb_slice.to(device, dtype=torch.float16)
         _input_frame = _input_rgb_slice.shape[1]
         _input_height, _input_width = _input_rgb_slice.shape[-2:]
         
-        outputs = model.pipe(
-            prompt=[""] * B,
-            negative_prompt=[""] * B,
-            mode=model.args.mode,
-            height=_input_height,
-            width=_input_width,
-            num_frames=_input_frame,
-            batch_size=B,
-            input_image=_input_rgb_slice[:, 0],
-            extra_images=_input_rgb_slice,
-            extra_image_frame_index=torch.ones([B, _input_frame]).to(model.pipe.device),
-            input_video=_input_rgb_slice,
-            cfg_scale=1,
-            seed=0,
-            tiled=False,
-            denoise_step=model.args.denoise_step,
-        )
+        with torch.inference_mode():
+            outputs = model.pipe(
+                prompt=[""] * B,
+                negative_prompt=[""] * B,
+                mode=model.args.mode,
+                height=_input_height,
+                width=_input_width,
+                num_frames=_input_frame,
+                batch_size=B,
+                input_image=_input_rgb_slice[:, 0],
+                extra_images=_input_rgb_slice,
+                extra_image_frame_index=torch.ones([B, _input_frame]).to(model.pipe.device),
+                input_video=_input_rgb_slice,
+                cfg_scale=1,
+                seed=0,
+                tiled=use_tiled,
+                tile_size=tile_size or (30, 52),
+                tile_stride=tile_stride or (15, 26),
+                denoise_step=model.args.denoise_step,
+            )
         depth_res_list.append(outputs['depth'][:, :origin_T])
+        # Free memory between windows to reduce fragmentation
+        torch.cuda.empty_cache()
     
     # Overlap alignment
     depth_list_aligned = None
@@ -333,18 +367,25 @@ class DVDVideoDepthEngine:
             input_tensor, _ = read_image_sequence(input_video, first_frame, last_frame, frame_padding)
             fps = 24
         
-        # VDA-style smart resize: process at native up to UHD max (4096x2160)
-        # Downscale only if exceeds UHD; otherwise use as-is (align to 16 for DVD pipeline)
-        input_tensor, orig_size, processed_size = resize_frames_to_uhd_max(input_tensor)
-        input_tensor = input_tensor.to(self.device)
-        print(f"[DVD] Processing at {processed_size[1]}x{processed_size[0]} (UHD-cap: {UHD_MAX_WIDTH}x{UHD_MAX_HEIGHT})")
-        
         # Load model if not loaded
         if self.model is None:
             self.load_model()
-        
-        # Run inference - depth output at processed resolution (same as VDA)
-        depth = generate_depth_sliced(self.model, input_tensor, window_size, overlap)[0]
+
+        # Auto fallback: try 4K (UHD) first, on OOM retry at 2K
+        for attempt, max_res in enumerate(["UHD", "2K"]):
+            try:
+                input_tensor_resized, orig_size, processed_size = resize_frames_to_uhd_max(input_tensor, max_res)
+                # Keep on CPU - generate_depth_sliced moves only window slices to GPU (saves ~10GB for long UHD)
+                print(f"[DVD] Processing at {processed_size[1]}x{processed_size[0]} ({max_res})")
+                depth = generate_depth_sliced(self.model, input_tensor_resized, window_size, overlap, device=self.device)[0]
+                break
+            except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
+                if "out of memory" not in str(e).lower() and "CUDA" not in str(e):
+                    raise
+                if max_res == "2K":
+                    raise RuntimeError(f"DVD OOM even at 2K. {e}") from e
+                torch.cuda.empty_cache()
+                print(f"[DVD] OOM at UHD -> retrying at 2K (2048x1080)")
         # Output at processed size (max quality) - no resize_back, like VDA engine
         
         # Save EXR
